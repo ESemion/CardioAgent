@@ -1,0 +1,28 @@
+cmake_minimum_required(VERSION 3.10)
+project(CardioAgent)
+
+set(CMAKE_CXX_STANDARD 17)
+
+# Ищем OpenSSL
+find_package(OpenSSL REQUIRED)
+
+# Добавляем исполняемый файл
+add_executable(cardioagent
+    src/main.cpp
+    src/Config.cpp
+    src/Agent.cpp
+    src/TaskExecutor.cpp
+    src/Logger.cpp
+    
+)
+
+# Пути к заголовочным файлам
+target_include_directories(cardioagent PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/lib/cpp-httplib
+)
+
+# Линковка с OpenSSL
+target_link_libraries(cardioagent OpenSSL::SSL OpenSSL::Crypto)
+
+
