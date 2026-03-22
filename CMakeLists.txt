@@ -16,6 +16,9 @@ add_executable(cardioagent
     
 )
 
+# Подавляем предупреждения от устаревших методов в CMakeLists
+add_compile_options(-Wno-deprecated-declarations)
+
 # Пути к заголовочным файлам
 target_include_directories(cardioagent PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
