@@ -1,17 +1,9 @@
 #include "Agent.h"
 #include "Logger.h"
-#include <iostream>
-#include <fstream>
-#include <chrono>
-#include <thread>
 
-Agent::Agent(const Config& config) 
-    : m_config(config)
-    , m_running(false)
-    , m_taskRunning(false)
-    , m_consecutiveFailures(0)
-    , m_currentPollInterval(std::chrono::seconds(config.getPollInterval())) {
-    
+
+// В конструкторе реализована логика выделения из URL host и port для SSLClient
+Agent::Agent(const Config& config) : m_config(config), m_running(false) {
     std::string url = m_config.getServerUrl();
     
     size_t protocolEnd = url.find("://");
@@ -36,16 +28,20 @@ Agent::Agent(const Config& config)
     }
     
     m_httpClient = std::make_unique<httplib::SSLClient>(host, port);
+
+    // Проверка сертификата вроде как включена по умолчанию
+
     m_httpClient->set_connection_timeout(5);
     m_httpClient->set_read_timeout(10);
     
     Logger::instance().debug("HTTP клиент создан: " + host + ":" + std::to_string(port));
-    m_accessCode = m_config.getAccessCode();
 }
+
 
 Agent::~Agent() {
     stop();
 }
+
 
 std::string Agent::extractJsonValue(const std::string& json, const std::string& key) {
     std::string search = "\"" + key + "\":\"";
@@ -59,34 +55,19 @@ std::string Agent::extractJsonValue(const std::string& json, const std::string& 
     return json.substr(start, end - start);
 }
 
-void Agent::increasePollInterval() {
-    m_consecutiveFailures++;
-    int baseInterval = m_config.getPollInterval();
-    int newInterval = baseInterval * (1 << m_consecutiveFailures);
-    
-    if (newInterval > 300) newInterval = 300;
-    m_currentPollInterval = std::chrono::seconds(newInterval);
-    
-    Logger::instance().warning(std::to_string(m_consecutiveFailures) + 
-                               " последовательных сбоев. Увеличиваем интервал до " + 
-                               std::to_string(newInterval) + " секунд.");
-}
 
-void Agent::resetPollInterval() {
-    m_consecutiveFailures = 0;
-    m_currentPollInterval = std::chrono::seconds(m_config.getPollInterval());
-}
 
 bool Agent::registerAgent() {
+
+    // Если есть access_code, проверяем его
     if (!m_config.getAccessCode().empty()) {
         Logger::instance().info("Регистрация отменена, код доступа уже существует");
-        m_accessCode = m_config.getAccessCode();
         return true;
     }
 
     Logger::instance().info("Регистрация агента на сервере");
     
-    std::string body = "{\"UID\":\"" + m_config.getUid() + 
+    std::string body =  "{\"UID\":\"" + m_config.getUid() + 
                        "\",\"descr\":\"" + m_config.getDescription() + "\"}";
     
     auto res = m_httpClient->Post("/app/webagent1/api/wa_reg/", body, "application/json");
@@ -99,16 +80,17 @@ bool Agent::registerAgent() {
     auto accessCode = extractJsonValue(res->body, "access_code");
     auto codeResponce = extractJsonValue(res->body, "code_responce");
     
+    
     if (codeResponce == "-3") {
         Logger::instance().error("Ошибка регистрации: агент зарегистрирован, но код доступа утерян");
         return false;
     }
     if (accessCode.empty()) {
         Logger::instance().error("Ошибка регистрации: некорректный ответ сервера");
+        std::cout << res->body;
         return false;
     }
 
-    m_accessCode = accessCode;
     m_config.setAccessCode(accessCode);
     m_config.save("config/agent.ini");
 
@@ -116,102 +98,65 @@ bool Agent::registerAgent() {
     return true;
 }
 
+
+/* 
+Пока опрос реализован плохо, надо реализовать разделение на поток опроса и потоком с очередью заданий и их выполнением
+Это нужно чтобы даже если выполнение задания зависло, агент не завис и смог бы отправить команду по типу отмены
+
+Нужно по максимуму сохранить текущую структуру кода. 
+
+*/
 void Agent::start(std::function<ExecutionResult(const Task&)> callback) {
     m_running = true;
-    m_taskRunning = true;
     
-    m_pollThread = std::thread(&Agent::pollingLoop, this, callback);
-    m_taskThread = std::thread(&Agent::taskWorker, this);
-    
-    Logger::instance().info("Агент запущен. Ожидание команд...");
+    m_pollThread = std::thread([this, callback]() {
+        Logger::instance().info("Запущен цикл опроса, интервал: " + std::to_string(m_config.getPollInterval()) + " сек");
+        
+        while (m_running) {
+            std::string body = "{\"UID\":\"" + m_config.getUid() +
+                              "\",\"descr\":\"" + m_config.getDescription() +
+                              "\",\"access_code\":\"" + m_config.getAccessCode() + "\"}";
+            
+            auto res = m_httpClient->Post("/app/webagent1/api/wa_task/", body, "application/json");
+            
+            if (res && res->status == 200) {
+                std::string code = extractJsonValue(res->body, "code_responce");
+                std::string msg = extractJsonValue(res->body, "msg");
+
+                if (code == "1") {
+                    Task task;
+                    task.sessionId = extractJsonValue(res->body, "session_id");
+                    task.taskCode = extractJsonValue(res->body, "task_code");
+                    task.options = extractJsonValue(res->body, "options");
+                    
+                    Logger::instance().info("Получено задание: " + task.taskCode);
+                    ExecutionResult result = callback(task);
+                    uploadResults(task.sessionId, result);
+                }
+                else if (code != "0") {
+                    Logger::instance().error("Возникла ошибка: " + msg);
+                }
+            }
+            
+            for (int i = 0; i < m_config.getPollInterval() && m_running; i++) {
+                std::this_thread::sleep_for(std::chrono::seconds(1));
+            }
+        }
+        
+        Logger::instance().info("Цикл опроса остановлен");
+    });
 }
+
+
 
 void Agent::stop() {
     m_running = false;
-    m_taskRunning = false;
-    m_queueCV.notify_all();
-    
-    if (m_pollThread.joinable()) m_pollThread.join();
-    if (m_taskThread.joinable()) m_taskThread.join();
-    
-    Logger::instance().info("Агент остановлен");
+    if (m_pollThread.joinable()) {
+        m_pollThread.join();
+    }
 }
 
-void Agent::pollingLoop(std::function<ExecutionResult(const Task&)> callback) {
-    Logger::instance().info("Запущен цикл опроса. Начальный интервал: " + 
-                            std::to_string(m_currentPollInterval.count()) + " сек");
-    
-    while (m_running) {
-        std::string body = "{\"UID\":\"" + m_config.getUid() +
-                          "\",\"descr\":\"" + m_config.getDescription() +
-                          "\",\"access_code\":\"" + m_accessCode + "\"}";
-        
-        auto res = m_httpClient->Post("/app/webagent1/api/wa_task/", body, "application/json");
-        
-        if (!res) {
-            Logger::instance().error("Не удалось подключиться к серверу");
-            increasePollInterval();
-        } 
-        else if (res->status != 200) {
-            Logger::instance().error("HTTP " + std::to_string(res->status));
-            increasePollInterval();
-        }
-        else {
-            resetPollInterval();
-            
-            std::string code = extractJsonValue(res->body, "code_responce");
-            std::string msg = extractJsonValue(res->body, "msg");
-            
-            if (code == "1") {
-                Task task;
-                task.sessionId = extractJsonValue(res->body, "session_id");
-                task.taskCode = extractJsonValue(res->body, "task_code");
-                task.options = extractJsonValue(res->body, "options");
-                
-                Logger::instance().info("Получено задание: " + task.taskCode);
-                
-                {
-                    std::lock_guard<std::mutex> lock(m_queueMutex);
-                    m_taskQueue.push({task, callback});
-                }
-                m_queueCV.notify_one();
-            }
-            else if (code != "0") {
-                Logger::instance().error("Возникла ошибка: " + msg);
-            }
-        }
-        
-        if (m_running) {
-            std::this_thread::sleep_for(m_currentPollInterval);
-        }
-    }
-    
-    Logger::instance().info("Цикл опроса остановлен");
-}
 
-void Agent::taskWorker() {
-    while (m_taskRunning) {
-        std::pair<Task, std::function<ExecutionResult(const Task&)>> taskItem;
-        
-        {
-            std::unique_lock<std::mutex> lock(m_queueMutex);
-            m_queueCV.wait(lock, [this] {
-                return !m_taskQueue.empty() || !m_taskRunning;
-            });
-            
-            if (!m_taskRunning) break;
-            
-            taskItem = m_taskQueue.front();
-            m_taskQueue.pop();
-        }
-        
-        Logger::instance().info("Выполнение задания: " + taskItem.first.taskCode);
-        ExecutionResult result = taskItem.second(taskItem.first);
-        uploadResults(taskItem.first.sessionId, result);
-    }
-    
-    Logger::instance().info("Поток выполнения задач остановлен");
-}
 
 bool Agent::uploadResults(const std::string& sessionId, const ExecutionResult& result) {
     Logger::instance().info("Отправка результатов для сессии: " + sessionId);
