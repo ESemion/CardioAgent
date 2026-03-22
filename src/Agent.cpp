@@ -164,7 +164,7 @@ bool Agent::uploadResults(const std::string& sessionId, const ExecutionResult& r
     int resultCode = result.success ? 0 : -1;
     
     std::string resultJson = "{\"UID\":\"" + m_config.getUid() +
-                             "\",\"access_code\":\"" + m_accessCode +
+                             "\",\"access_code\":\"" +  m_config.getAccessCode() +
                              "\",\"message\":\"" + result.message +
                              "\",\"files\":" + std::to_string(result.files.size()) +
                              ",\"session_id\":\"" + sessionId + "\"}";
