@@ -87,9 +87,9 @@ bool Agent::registerAgent() {
     }
     if (accessCode.empty()) {
         Logger::instance().error("Ошибка регистрации: некорректный ответ сервера");
-        std::cout << res->body;
         return false;
     }
+    
 
     m_config.setAccessCode(accessCode);
     m_config.save("config/agent.ini");

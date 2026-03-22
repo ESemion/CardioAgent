@@ -63,10 +63,14 @@ bool Config::load(const std::string& filepath) {
         
 
     }
-
     if (m_serverUrl.empty()) {
         Logger::instance().error("В конфигурации не найден параметр server_url");
         return false;
+    }
+
+    if (m_description.empty()) {
+        m_description = "agent";
+        needResaving = true;
     }
     if (needResaving) {
         save("config/agent.ini");  
