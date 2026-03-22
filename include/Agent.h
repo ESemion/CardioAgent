@@ -65,13 +65,13 @@ private:
     std::atomic<bool> m_running;               ///< флаг работы
 
     std::thread m_pollThread;                  ///< поток опроса
-    std::thread m_taskThread;                  // поток выполнения задач
-    
-    // Очередь задач
-    std::queue<std::pair<Task, std::function<ExecutionResult(const Task&)>>> m_taskQueue;
-    std::mutex m_queueMutex;
-    std::condition_variable m_queueCV;
-    std::atomic<bool> m_taskRunning;
+    std::thread m_taskThread;                  ///< поток выполнения задач
+
+    // Очередь задач (для разделения потоков)
+    std::queue<std::pair<Task, std::function<ExecutionResult(const Task&)>>> m_taskQueue; ///< очередь заданий от сервера
+    std::mutex m_queueMutex;                   ///< мьютекс для защиты очереди
+    std::condition_variable m_queueCV;         ///< условная переменная для ожидания задач
+    std::atomic<bool> m_taskRunning;           ///< флаг работы потока выполнения задач
     
     /**
      * @brief Извлечение значения по ключу из JSON строки
