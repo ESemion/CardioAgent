@@ -57,7 +57,7 @@ public:
     
 private:
     Config m_config;                           ///< настройки агента
-    std::string m_accessCode;                  ///< код доступа от сервера
+        
     std::unique_ptr<httplib::SSLClient> m_httpClient; ///< HTTP клиент
     std::atomic<bool> m_running;               ///< флаг работы
     std::thread m_pollThread;                  ///< поток опроса
