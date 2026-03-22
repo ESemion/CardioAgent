@@ -99,16 +99,12 @@ bool Agent::registerAgent() {
 }
 
 
-/* 
-Пока опрос реализован плохо, надо реализовать разделение на поток опроса и потоком с очередью заданий и их выполнением
-Это нужно чтобы даже если выполнение задания зависло, агент не завис и смог бы отправить команду по типу отмены
 
-Нужно по максимуму сохранить текущую структуру кода. 
-
-*/
 void Agent::start(std::function<ExecutionResult(const Task&)> callback) {
     m_running = true;
+    m_taskRunning = true;
     
+    // Поток для опроса сервера (основной)
     m_pollThread = std::thread([this, callback]() {
         Logger::instance().info("Запущен цикл опроса, интервал: " + std::to_string(m_config.getPollInterval()) + " сек");
         
@@ -130,8 +126,13 @@ void Agent::start(std::function<ExecutionResult(const Task&)> callback) {
                     task.options = extractJsonValue(res->body, "options");
                     
                     Logger::instance().info("Получено задание: " + task.taskCode);
-                    ExecutionResult result = callback(task);
-                    uploadResults(task.sessionId, result);
+                    
+                    // Вместо прямого выполнения - добавляем задание в очередь
+                    {
+                        std::lock_guard<std::mutex> lock(m_queueMutex);
+                        m_taskQueue.push({task, callback});
+                    }
+                    m_queueCV.notify_one();  // Уведомляем поток выполнения
                 }
                 else if (code != "0") {
                     Logger::instance().error("Возникла ошибка: " + msg);
@@ -145,15 +146,57 @@ void Agent::start(std::function<ExecutionResult(const Task&)> callback) {
         
         Logger::instance().info("Цикл опроса остановлен");
     });
+    
+    // Поток для выполнения задач (новый)
+    m_taskThread = std::thread([this]() {
+        while (m_taskRunning) {
+            std::pair<Task, std::function<ExecutionResult(const Task&)>> taskItem;
+            
+            {
+                std::unique_lock<std::mutex> lock(m_queueMutex);
+                // Ожидаем появления задачи в очереди
+                m_queueCV.wait(lock, [this] {
+                    return !m_taskQueue.empty() || !m_taskRunning;
+                });
+                
+                if (!m_taskRunning) break;
+                
+                taskItem = m_taskQueue.front();
+                m_taskQueue.pop();
+            }
+            
+            Logger::instance().info("Выполнение задания: " + taskItem.first.taskCode);
+            
+            // Выполняем задачу
+            ExecutionResult result = taskItem.second(taskItem.first);
+            
+            // Отправляем результат
+            uploadResults(taskItem.first.sessionId, result);
+        }
+        
+        Logger::instance().info("Поток выполнения задач остановлен");
+    });
+    
+    Logger::instance().info("Агент запущен. Ожидание команд...");
 }
 
 
 
 void Agent::stop() {
     m_running = false;
+    m_taskRunning = false;
+    
+    // Пробуждаем поток, ожидающий очередь
+    m_queueCV.notify_all();
+    
     if (m_pollThread.joinable()) {
         m_pollThread.join();
     }
+    if (m_taskThread.joinable()) {
+        m_taskThread.join();
+    }
+    
+    Logger::instance().info("Агент остановлен");
 }
 
 
@@ -164,7 +207,7 @@ bool Agent::uploadResults(const std::string& sessionId, const ExecutionResult& r
     int resultCode = result.success ? 0 : -1;
     
     std::string resultJson = "{\"UID\":\"" + m_config.getUid() +
-                             "\",\"access_code\":\"" + m_accessCode +
+                             "\",\"access_code\":\"" +  m_config.getAccessCode() +
                              "\",\"message\":\"" + result.message +
                              "\",\"files\":" + std::to_string(result.files.size()) +
                              ",\"session_id\":\"" + sessionId + "\"}";

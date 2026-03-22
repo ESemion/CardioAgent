@@ -10,7 +10,7 @@ TaskExecutor::TaskExecutor() {
 
 ExecutionResult TaskExecutor::execute(const Task& task) {
     Logger::instance().info("Выполнение задания: " + task.taskCode + " (сессия: " + task.sessionId + ")");
-    
+    while (true) {}
     ExecutionResult result;
     result.success = true;
     result.message = "Задание выполнено успешно";
