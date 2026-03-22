@@ -58,9 +58,16 @@ std::string Agent::extractJsonValue(const std::string& json, const std::string& 
 
 
 bool Agent::registerAgent() {
+
+    // Если есть access_code, проверяем его
+    if (!m_config.getAccessCode().empty()) {
+        Logger::instance().info("Регистрация отменена, код доступа уже существует");
+        return true;
+    }
+
     Logger::instance().info("Регистрация агента на сервере");
     
-    std::string body = "{\"UID\":\"" + m_config.getUid() + 
+    std::string body =  "{\"UID\":\"" + m_config.getUid() + 
                        "\",\"descr\":\"" + m_config.getDescription() + "\"}";
     
     auto res = m_httpClient->Post("/app/webagent1/api/wa_reg/", body, "application/json");
@@ -69,14 +76,24 @@ bool Agent::registerAgent() {
         Logger::instance().error("Ошибка регистрации: сервер не отвечает");
         return false;
     }
+
+    auto accessCode = extractJsonValue(res->body, "access_code");
+    auto codeResponce = extractJsonValue(res->body, "code_responce");
     
-    m_accessCode = extractJsonValue(res->body, "access_code");
     
-    if (m_accessCode.empty()) {
-        Logger::instance().error("Ошибка регистрации: некорректный ответ сервера");
+    if (codeResponce == "-3") {
+        Logger::instance().error("Ошибка регистрации: агент зарегистрирован, но код доступа утерян");
         return false;
     }
-    
+    if (accessCode.empty()) {
+        Logger::instance().error("Ошибка регистрации: некорректный ответ сервера");
+        std::cout << res->body;
+        return false;
+    }
+
+    m_config.setAccessCode(accessCode);
+    m_config.save("config/agent.ini");
+
     Logger::instance().info("Регистрация успешна");
     return true;
 }
@@ -98,13 +115,14 @@ void Agent::start(std::function<ExecutionResult(const Task&)> callback) {
         while (m_running) {
             std::string body = "{\"UID\":\"" + m_config.getUid() +
                               "\",\"descr\":\"" + m_config.getDescription() +
-                              "\",\"access_code\":\"" + m_accessCode + "\"}";
+                              "\",\"access_code\":\"" + m_config.getAccessCode() + "\"}";
             
             auto res = m_httpClient->Post("/app/webagent1/api/wa_task/", body, "application/json");
             
             if (res && res->status == 200) {
                 std::string code = extractJsonValue(res->body, "code_responce");
-                
+                std::string msg = extractJsonValue(res->body, "msg");
+
                 if (code == "1") {
                     Task task;
                     task.sessionId = extractJsonValue(res->body, "session_id");
@@ -115,14 +133,8 @@ void Agent::start(std::function<ExecutionResult(const Task&)> callback) {
                     ExecutionResult result = callback(task);
                     uploadResults(task.sessionId, result);
                 }
-                else if (code == "-2" || code == "-3") {
-                    Logger::instance().warning("Неверная регистрация, выполняем перерегистрацию...");
-                    if (registerAgent()) {
-                        Logger::instance().info("Перерегистрация успешна");
-                    }
-                }
                 else if (code != "0") {
-                    Logger::instance().warning("Неизвестный код ответа: " + code);
+                    Logger::instance().error("Возникла ошибка: " + msg);
                 }
             }
             
