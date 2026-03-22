@@ -1,66 +1,74 @@
 #ifndef AGENT_H
 #define AGENT_H
 
-// ВАЖНО: Этот макрос должен быть определён ДО включения httplib.h
-// Макрос для поддержки OPENSSL
+//Макрос для поддержки OpenSSL
 #define CPPHTTPLIB_OPENSSL_SUPPORT 1
+
 #include "Task.h"
 #include "Config.h"
 #include <string>
 #include <memory>
+#include <functional>
+
+// Библиотеки для работы с потоками
 #include <thread>
 #include <atomic>
-#include <functional>
+
+// Библиотека для работы с HTTP
 #include <httplib.h>
 
-
-
-
 /**
- * Главный класс агента
- * Управляет регистрацией и опросом сервера
+ * @class Agent
+ * @brief Управляет регистрацией и опросом сервера
  */
 class Agent {
-private:
-    Config m_config;           // Настройки
-    std::string m_accessCode;  // Код доступа (от сервера)
-    
-    std::unique_ptr<httplib::SSLClient> m_httpClient;  // HTTP клиент
-    std::atomic<bool> m_running;     // Флаг работы
-    std::thread m_pollThread;         // Поток опроса
-
 public:
+    /**
+     * @brief Конструктор
+     * @param config объект конфигурации
+     */
     Agent(const Config& config);
     ~Agent();
     
     /**
-     * Регистрация на сервере
-     * @return true если успешно
+     * @brief Регистрация агента на сервере
+     * @return true при успешной регистрации
      */
     bool registerAgent();
     
     /**
-     * Запуск цикла опроса
-     * @param callback функция для обработки полученных заданий
+     * @brief Запуск цикла опроса сервера
+     * @param callback функция обработки полученных заданий
      */
     void start(std::function<ExecutionResult(const Task&)> callback);
     
     /**
-     * Остановка опроса
+     * @brief Остановка цикла опроса
      */
     void stop();
-
+    
     /**
-     * Отправляет результаты выполнения на сервер
-     * @param sessionId ID сессии задания
-     * @param success успешно ли выполнено
-     * @param message сообщение о результате
-     * @param files список файлов для отправки
-     * @return true если отправка успешна
+     * @brief Отправка результатов выполнения на сервер
+     * @param sessionId идентификатор сессии задания
+     * @param result результат выполнения
+     * @return true при успешной отправке
      */
     bool uploadResults(const std::string& sessionId, const ExecutionResult& result);
-
-    bool confirmTaskReceived(const std::string& sessionId);
+    
+private:
+    Config m_config;                           ///< настройки агента
+    std::string m_accessCode;                  ///< код доступа от сервера
+    std::unique_ptr<httplib::SSLClient> m_httpClient; ///< HTTP клиент
+    std::atomic<bool> m_running;               ///< флаг работы
+    std::thread m_pollThread;                  ///< поток опроса
+    
+    /**
+     * @brief Извлечение значения по ключу из JSON строки
+     * @param json JSON строка
+     * @param key ключ
+     * @return значение или пустая строка
+     */
+    std::string extractJsonValue(const std::string& json, const std::string& key);
 };
 
-#endif // AGENT_H
+#endif
