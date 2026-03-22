@@ -9,10 +9,13 @@
 #include <string>
 #include <memory>
 #include <functional>
+#include <queue>
 
 // Библиотеки для работы с потоками
 #include <thread>
 #include <atomic>
+#include <mutex>
+#include <condition_variable>
 
 // Библиотека для работы с HTTP
 #include <httplib.h>
@@ -60,7 +63,15 @@ private:
         
     std::unique_ptr<httplib::SSLClient> m_httpClient; ///< HTTP клиент
     std::atomic<bool> m_running;               ///< флаг работы
+
     std::thread m_pollThread;                  ///< поток опроса
+    std::thread m_taskThread;                  // поток выполнения задач
+    
+    // Очередь задач
+    std::queue<std::pair<Task, std::function<ExecutionResult(const Task&)>>> m_taskQueue;
+    std::mutex m_queueMutex;
+    std::condition_variable m_queueCV;
+    std::atomic<bool> m_taskRunning;
     
     /**
      * @brief Извлечение значения по ключу из JSON строки
