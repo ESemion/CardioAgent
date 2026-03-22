@@ -2,64 +2,76 @@
 #include <csignal>
 #include <thread>
 #include <atomic>
-#include <sys/stat.h>
 #include "Config.h"
 #include "Agent.h"
 #include "TaskExecutor.h"
-#include "Logger.h"
 
 std::atomic<bool> g_running(true);
 Agent* g_agent = nullptr;
 
 void signalHandler(int signal) {
+    std::cout << "\n\n!!! Получен сигнал " << signal << " !!!" << std::endl;
     g_running = false;
+    
     if (g_agent) {
         g_agent->stop();
     }
 }
 
 int main(int argc, char* argv[]) {
-    mkdir("logs", 0755);
-    mkdir("temp", 0755);
-    
-    Logger::instance().setLevel(LogLevel::INFO);
-    Logger::instance().setLogFile("logs/agent.log");
-    Logger::instance().info("CardioAgent v1.0 запущен");
+    std::cout << "========================================" << std::endl;
+    std::cout << "         CardioAgent v1.0              " << std::endl;
+    std::cout << "========================================" << std::endl;
     
     std::string configPath = "config/agent.ini";
     if (argc > 1) {
         configPath = argv[1];
+        std::cout << "Путь к конфигу из аргументов: " << configPath << std::endl;
+    } else {
+        std::cout << "Путь к конфигу по умолчанию: " << configPath << std::endl;
     }
     
+    // Загружаем конфигурацию
     Config config;
     if (!config.load(configPath)) {
-        Logger::instance().error("Не удалось загрузить конфигурацию");
+        std::cerr << "Ошибка: не удалось загрузить конфигурацию" << std::endl;
         return 1;
     }
     
+    // Создаём агента
     Agent agent(config);
     g_agent = &agent;
     
+    // Регистрируемся на сервере
     if (!agent.registerAgent()) {
-        Logger::instance().error("Не удалось зарегистрироваться на сервере");
+        std::cerr << "Ошибка: не удалось зарегистрироваться на сервере" << std::endl;
         return 1;
     }
     
+    // Устанавливаем обработчик сигналов
     std::signal(SIGINT, signalHandler);
     std::signal(SIGTERM, signalHandler);
     
+    // Создаём исполнитель заданий
     TaskExecutor executor;
     
+    // Запускаем агента с колбэком для обработки заданий
+    std::cout << "\nЗапуск агента... Нажмите Ctrl+C для остановки" << std::endl;
+    
     agent.start([&executor](const Task& task) -> ExecutionResult {
-        return executor.execute(task);
+        
+        // ВЫПОЛНЯЕМ И ВОЗВРАЩАЕМ РЕЗУЛЬТАТ
+        return executor.execute(task);  // ← возвращаем ExecutionResult
     });
     
-    Logger::instance().info("Агент запущен. Нажмите Ctrl+C для остановки.");
+    std::cout << "\n✅ Агент работает в фоновом режиме." << std::endl;
+    std::cout << "Нажмите Ctrl+C для выхода.\n" << std::endl;
     
+    // Ждём сигнала остановки
     while (g_running) {
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }
     
-    Logger::instance().info("Агент остановлен");
+    std::cout << "\n✅ Программа завершена." << std::endl;
     return 0;
 }

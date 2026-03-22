@@ -6,22 +6,28 @@
 
 /**
  * @struct Task
- * @brief Задание от сервера
+ * @brief Единая структура задания
  */
 struct Task {
-    std::string sessionId;  ///< идентификатор сессии
-    std::string taskCode;   ///< код задания (CONF, UPLOAD, REBOOT)
-    std::string options;    ///< параметры задания
+    std::string sessionId;   ///< ID сессии от сервера
+    std::string taskCode;    ///< CONF, UPLOAD, REBOOT
+    std::string options;     ///< параметры
 };
+
 
 /**
  * @struct ExecutionResult
  * @brief Результат выполнения задания
+ * 
+ * Содержит информацию о том, как прошло выполнение:
+ * - успех/ошибка
+ * - какие файлы созданы
+ * - текстовое сообщение
  */
 struct ExecutionResult {
-    bool success;                     ///< успешность выполнения
-    std::vector<std::string> files;   ///< список созданных файлов
-    std::string message;              ///< текстовое сообщение
+    bool success;                    ///< true = всё ок, false = ошибка
+    std::vector<std::string> files;  ///< пути к созданным файлам
+    std::string message;             ///< сообщение о результате
 };
 
-#endif
+#endif // TASK_H
