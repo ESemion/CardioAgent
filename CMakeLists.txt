@@ -1,6 +1,9 @@
 cmake_minimum_required(VERSION 3.10)
 project(CardioAgent)
 
+# Подавляем предупреждения от устаревших методов в CMakeLists
+add_compile_options(-Wno-deprecated-declarations)
+
 set(CMAKE_CXX_STANDARD 17)
 
 # Ищем OpenSSL
@@ -15,6 +18,8 @@ add_executable(cardioagent
     src/Logger.cpp
     
 )
+
+
 
 # Пути к заголовочным файлам
 target_include_directories(cardioagent PRIVATE
