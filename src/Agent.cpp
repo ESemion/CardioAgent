@@ -57,6 +57,21 @@ std::string Agent::extractJsonValue(const std::string& json, const std::string& 
 
 
 
+bool Agent::checkServerAvailability() {
+    Logger::instance().info("Проверка доступности сервера...");
+
+    auto res = m_httpClient->Get("/");
+
+    if (res) {
+        Logger::instance().info("Сервер доступен (HTTP " + std::to_string(res->status) + ")");
+        return true;
+    }
+
+    Logger::instance().error("Сервер недоступен: " + httplib::to_string(res.error()));
+    return false;
+}
+
+
 bool Agent::registerAgent() {
 
     // Если есть access_code, проверяем его

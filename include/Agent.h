@@ -34,6 +34,12 @@ public:
     ~Agent();
     
     /**
+     * @brief Проверка доступности сервера
+     * @return true если сервер доступен
+     */
+    bool checkServerAvailability();
+
+    /**
      * @brief Регистрация агента на сервере
      * @return true при успешной регистрации
      */
