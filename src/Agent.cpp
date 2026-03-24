@@ -3,23 +3,22 @@
 #include <cstdio>
 
 
-// В конструкторе реализована логика выделения из URL host и port для SSLClient
 Agent::Agent(const Config& config) : m_config(config), m_running(false), m_currentPollInterval(config.getPollInterval()) {
     std::string url = m_config.getServerUrl();
-    
+
     size_t protocolEnd = url.find("://");
     if (protocolEnd == std::string::npos) {
         Logger::instance().error("Некорректный URL сервера: " + url);
         return;
     }
-    
+
     size_t hostStart = protocolEnd + 3;
     size_t pathStart = url.find("/", hostStart);
     std::string hostPort = url.substr(hostStart, pathStart - hostStart);
-    
+
     std::string host;
     int port = 443;
-    
+
     size_t colonPos = hostPort.find(':');
     if (colonPos != std::string::npos) {
         host = hostPort.substr(0, colonPos);
@@ -27,14 +26,13 @@ Agent::Agent(const Config& config) : m_config(config), m_running(false), m_curre
     } else {
         host = hostPort;
     }
-    
+
     m_httpClient = std::make_unique<httplib::SSLClient>(host, port);
 
-    // Проверка сертификата вроде как включена по умолчанию
-
+    // cpp-httplib включает проверку сертификата по умолчанию (CPPHTTPLIB_OPENSSL_SUPPORT)
     m_httpClient->set_connection_timeout(5);
     m_httpClient->set_read_timeout(10);
-    
+
     Logger::instance().debug("HTTP клиент создан: " + host + ":" + std::to_string(port));
 }
 
@@ -48,11 +46,11 @@ std::string Agent::extractJsonValue(const std::string& json, const std::string& 
     std::string search = "\"" + key + "\":\"";
     size_t start = json.find(search);
     if (start == std::string::npos) return "";
-    
+
     start += search.length();
     size_t end = json.find("\"", start);
     if (end == std::string::npos) return "";
-    
+
     return json.substr(start, end - start);
 }
 
@@ -75,19 +73,20 @@ bool Agent::checkServerAvailability() {
 
 bool Agent::registerAgent() {
 
-    // Если есть access_code, проверяем его
+    // Если access_code уже получен — повторная регистрация не нужна,
+    // сервер выдаёт код однократно при первом подключении
     if (!m_config.getAccessCode().empty()) {
         Logger::instance().info("Регистрация отменена, код доступа уже существует");
         return true;
     }
 
     Logger::instance().info("Регистрация агента на сервере");
-    
-    std::string body =  "{\"UID\":\"" + m_config.getUid() + 
+
+    std::string body =  "{\"UID\":\"" + m_config.getUid() +
                        "\",\"descr\":\"" + m_config.getDescription() + "\"}";
-    
+
     auto res = m_httpClient->Post("/app/webagent1/api/wa_reg/", body, "application/json");
-    
+
     if (!res) {
         Logger::instance().error("Ошибка регистрации: сервер не отвечает");
         return false;
@@ -95,8 +94,9 @@ bool Agent::registerAgent() {
 
     auto accessCode = extractJsonValue(res->body, "access_code");
     auto codeResponce = extractJsonValue(res->body, "code_responce");
-    
-    
+
+    // -3: агент уже зарегистрирован, но access_code не был сохранён локально;
+    // сервер не выдаёт код повторно — требуется ручное вмешательство
     if (codeResponce == "-3") {
         Logger::instance().error("Ошибка регистрации: агент зарегистрирован, но код доступа утерян");
         return false;
@@ -105,7 +105,7 @@ bool Agent::registerAgent() {
         Logger::instance().error("Ошибка регистрации: некорректный ответ сервера");
         return false;
     }
-    
+
 
     m_config.setAccessCode(accessCode);
     m_config.save("config/agent.ini");
@@ -119,8 +119,8 @@ bool Agent::registerAgent() {
 void Agent::start(std::function<ExecutionResult(const Task&)> callback) {
     m_running = true;
     m_taskRunning = true;
-    
-    // Поток для опроса сервера (основной)
+
+    // Поток опроса сервера
     m_currentPollInterval = m_config.getPollInterval();
     m_pollThread = std::thread([this, callback]() {
         Logger::instance().info("Запущен цикл опроса, интервал: " + std::to_string(m_config.getPollInterval()) + " сек");
@@ -151,18 +151,18 @@ void Agent::start(std::function<ExecutionResult(const Task&)> callback) {
 
                     Logger::instance().info("Получено задание: " + task.taskCode);
 
-                    // Вместо прямого выполнения - добавляем задание в очередь
+                    // Добавляем задание в очередь, а не выполняем в потоке опроса
                     {
                         std::lock_guard<std::mutex> lock(m_queueMutex);
                         m_taskQueue.push({task, callback});
                     }
-                    m_queueCV.notify_one();  // Уведомляем поток выполнения
+                    m_queueCV.notify_one();
                 }
                 else if (code != "0") {
                     Logger::instance().error("Возникла ошибка: " + msg);
                 }
             } else {
-                // Сервер недоступен — увеличиваем интервал (exponential backoff)
+                // Сервер недоступен — exponential backoff
                 int newInterval = std::min(m_currentPollInterval.load() * 2, m_config.getMaxPollInterval());
                 if (newInterval != m_currentPollInterval) {
                     m_currentPollInterval = newInterval;
@@ -181,37 +181,32 @@ void Agent::start(std::function<ExecutionResult(const Task&)> callback) {
 
         Logger::instance().info("Цикл опроса остановлен");
     });
-    
-    // Поток для выполнения задач (новый)
+
+    // Поток выполнения задач
     m_taskThread = std::thread([this]() {
         while (m_taskRunning) {
             std::pair<Task, std::function<ExecutionResult(const Task&)>> taskItem;
-            
+
             {
                 std::unique_lock<std::mutex> lock(m_queueMutex);
-                // Ожидаем появления задачи в очереди
                 m_queueCV.wait(lock, [this] {
                     return !m_taskQueue.empty() || !m_taskRunning;
                 });
-                
+
                 if (!m_taskRunning) break;
-                
+
                 taskItem = m_taskQueue.front();
                 m_taskQueue.pop();
             }
-            
+
             Logger::instance().info("Выполнение задания: " + taskItem.first.taskCode);
-            
-            // Выполняем задачу
             ExecutionResult result = taskItem.second(taskItem.first);
-            
-            // Отправляем результат
             uploadResults(taskItem.first.sessionId, result);
         }
-        
+
         Logger::instance().info("Поток выполнения задач остановлен");
     });
-    
+
     Logger::instance().info("Агент запущен. Ожидание команд...");
 }
 
@@ -220,8 +215,7 @@ void Agent::start(std::function<ExecutionResult(const Task&)> callback) {
 void Agent::stop() {
     m_running = false;
     m_taskRunning = false;
-    
-    // Пробуждаем поток, ожидающий очередь
+
     m_queueCV.notify_all();
     
     if (m_pollThread.joinable()) {
@@ -301,7 +295,6 @@ bool Agent::uploadResults(const std::string& sessionId, const ExecutionResult& r
     if (code == "0") {
         Logger::instance().info("Результаты успешно отправлены");
 
-        // Удаляем временные файлы после успешной отправки
         for (const auto& filePath : result.files) {
             if (std::remove(filePath.c_str()) == 0) {
                 Logger::instance().debug("Удалён временный файл: " + filePath);
