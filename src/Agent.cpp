@@ -1,6 +1,5 @@
 #include "Agent.h"
 #include "Logger.h"
-#include <cstdio>
 
 Agent::Agent(const Config& config)
     : m_config(config), m_server(config.getServerUrl()),
@@ -12,7 +11,7 @@ Agent::~Agent() {
 
 void Agent::start(std::function<ExecutionResult(const Task&)> callback) {
 
-    //Защита от повторного вызова
+    // Защита от повторного вызова
     if (m_running.exchange(true)) {
         Logger::instance().warning("Попытка повторного запуска Agent::start() проигнорирована.");
         return;
@@ -29,7 +28,8 @@ void Agent::start(std::function<ExecutionResult(const Task&)> callback) {
 
     std::string accessCode = m_config.getAccessCode();
     if (accessCode=="") {
-        // Сначала пытаемся зарегистрироваться
+        // Если access_code уже получен — повторная регистрация не нужна,
+        // сервер выдаёт код однократно при первом подключении
         if (!m_server.registerAgent(m_config.getUid(), m_config.getDescription(), accessCode)) {
             Logger::instance().info("Регистрация отменена");
             m_running = false;
@@ -40,10 +40,9 @@ void Agent::start(std::function<ExecutionResult(const Task&)> callback) {
             m_config.setAccessCode(accessCode);
             m_config.save("config/agent.ini");
         }
-
     }
 
-    // Поток опроса (Producer): запрашивает задачи и кладет в очередь
+    // Поток опроса (Producer): кладёт задания в очередь
     m_currentPollInterval = m_config.getPollInterval();
     m_pollThread = std::thread([this, callback]() {
         Logger::instance().info("Запущен цикл опроса, интервал: " + std::to_string(m_config.getPollInterval()) + " сек");
@@ -60,6 +59,7 @@ void Agent::start(std::function<ExecutionResult(const Task&)> callback) {
 
                 if (task.status == "RUN") {
                     Logger::instance().info("Получена задача: " + task.taskCode);
+                    // Добавляем задание в очередь, а не выполняем в потоке опроса
                     {
                         std::lock_guard<std::mutex> lock(m_queueMutex);
                         m_taskQueue.push({task, callback});
@@ -67,7 +67,7 @@ void Agent::start(std::function<ExecutionResult(const Task&)> callback) {
                     m_queueCV.notify_one();
                 }
             } else {
-                // Сервер недоступен — увеличиваем интервал (exponential backoff)
+                // Сервер недоступен — exponential backoff
                 int newInterval = std::min(m_currentPollInterval.load() * 2, m_config.getMaxPollInterval());
                 if (newInterval != m_currentPollInterval) {
                     m_currentPollInterval = newInterval;
@@ -90,8 +90,6 @@ void Agent::start(std::function<ExecutionResult(const Task&)> callback) {
 
     // Поток выполнения (Consumer): забирает задачи из очереди и исполняет
     m_taskThread = std::thread([this]() {
-        Logger::instance().info("Поток выполнения задач запущен");
-
         while (m_running) {
             std::pair<Task, std::function<ExecutionResult(const Task&)>> item;
             {
@@ -106,7 +104,7 @@ void Agent::start(std::function<ExecutionResult(const Task&)> callback) {
                 m_taskQueue.pop();
             }
 
-            Logger::instance().info("Запуск выполнения: " + item.first.taskCode);
+            Logger::instance().info("Выполнение задания: " + item.first.taskCode);
             ExecutionResult res = item.second(item.first);
 
             if (m_server.uploadResults(m_config.getUid(), m_config.getAccessCode(), item.first.sessionId, res)) {
@@ -115,7 +113,11 @@ void Agent::start(std::function<ExecutionResult(const Task&)> callback) {
                 Logger::instance().error("Ошибка при отправке результата");
             }
         }
+
+        Logger::instance().info("Поток выполнения задач остановлен");
     });
+
+    Logger::instance().info("Агент запущен. Ожидание команд...");
 }
 
 void Agent::stop() {
