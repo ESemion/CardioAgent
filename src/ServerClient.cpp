@@ -64,6 +64,11 @@ ServerClient::ServerClient(const std::string& url) {
 
 ServerClient::~ServerClient() = default;
 
+bool ServerClient::checkAvailability() const {
+    auto res = m_client->Get("/");
+    return res != nullptr;
+}
+
 bool ServerClient::registerAgent(const std::string& uid, const std::string& descr, std::string& outAccessCode) {
     std::string body = "{\"UID\":\"" + escapeJson(uid) + 
                        "\",\"descr\":\"" + escapeJson(descr) + "\"}";

@@ -17,11 +17,21 @@ void Agent::start(std::function<ExecutionResult(const Task&)> callback) {
         return;
     }
 
+    // Проверяем доступность сервера перед регистрацией
+    Logger::instance().info("Проверка доступности сервера...");
+    if (!m_server.checkAvailability()) {
+        Logger::instance().error("Сервер недоступен при запуске");
+        m_running = false;
+        return;
+    }
+    Logger::instance().info("Сервер доступен");
+
     std::string accessCode = m_config.getAccessCode();
     if (accessCode=="") {
         // Сначала пытаемся зарегистрироваться
         if (!m_server.registerAgent(m_config.getUid(), m_config.getDescription(), accessCode)) {
             Logger::instance().info("Регистрация отменена");
+            m_running = false;
             return;
         }
         // Если получили новый код — сохраняем

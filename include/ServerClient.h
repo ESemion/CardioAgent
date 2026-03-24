@@ -27,6 +27,12 @@ public:
     ~ServerClient();
 
     /**
+     * @brief Проверка доступности сервера (GET /)
+     * @return true если сервер отвечает
+     */
+    bool checkAvailability() const;
+
+    /**
      * @brief Регистрация нового агента в системе
      * @return true если регистрация успешна и получен access_code
      */
