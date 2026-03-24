@@ -31,4 +31,9 @@ target_include_directories(cardioagent PRIVATE
 # Линковка с OpenSSL
 target_link_libraries(cardioagent OpenSSL::SSL OpenSSL::Crypto)
 
+# macOS: линковка с Security и CoreFoundation для загрузки системных сертификатов
+if(APPLE)
+    target_link_libraries(cardioagent "-framework CoreFoundation" "-framework Security")
+endif()
+
 
