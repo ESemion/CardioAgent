@@ -38,13 +38,14 @@ public:
     void stop();
 
 private:
-    Config m_config;
-    ServerClient m_server;
-    std::atomic<bool> m_running{false};
-    
-    std::thread m_pollThread;
-    std::thread m_taskThread;
-    
+    Config m_config;                           ///< настройки агента
+    ServerClient m_server;                     ///< HTTP клиент
+    std::atomic<bool> m_running{false};     ///< флаг работы
+    std::atomic<int> m_currentPollInterval;    ///< текущий интервал опроса (с учётом backoff)
+
+    std::thread m_pollThread;                  ///< поток опроса
+    std::thread m_taskThread;                  ///< поток выполнения задач
+
     // Очередь хранит пару: данные задачи и функцию-обработчик
     std::queue<std::pair<Task, std::function<ExecutionResult(const Task&)>>> m_taskQueue;
     std::mutex m_queueMutex;
