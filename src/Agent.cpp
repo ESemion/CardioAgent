@@ -1,5 +1,6 @@
 #include "Agent.h"
 #include "Logger.h"
+#include <cstdio>
 
 
 // В конструкторе реализована логика выделения из URL host и port для SSLClient
@@ -299,9 +300,19 @@ bool Agent::uploadResults(const std::string& sessionId, const ExecutionResult& r
     std::string code = extractJsonValue(res->body, "code_responce");
     if (code == "0") {
         Logger::instance().info("Результаты успешно отправлены");
+
+        // Удаляем временные файлы после успешной отправки
+        for (const auto& filePath : result.files) {
+            if (std::remove(filePath.c_str()) == 0) {
+                Logger::instance().debug("Удалён временный файл: " + filePath);
+            } else {
+                Logger::instance().warning("Не удалось удалить временный файл: " + filePath);
+            }
+        }
+
         return true;
     }
-    
+
     Logger::instance().error("Ошибка отправки: " + extractJsonValue(res->body, "msg"));
     return false;
 }
