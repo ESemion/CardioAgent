@@ -1,7 +1,9 @@
 #include "ServerClient.h"
+#include "Logger.h"
 
 #include <fstream>
 #include <sstream>
+#include <cstdio>
 
 namespace {
     // Внутренняя функция для безопасной вставки строк в JSON-тело
@@ -133,5 +135,19 @@ bool ServerClient::uploadResults(const std::string& uid, const std::string& acce
     }
 
     auto res = m_client->Post("/app/webagent1/api/wa_result/", items);
-    return res && res->status == 200 && extractJsonValue(res->body, "code_responce") == "0";
+
+    if (!res || res->status != 200 || extractJsonValue(res->body, "code_responce") != "0") {
+        return false;
+    }
+
+    // Удаляем временные файлы после успешной отправки
+    for (const auto& path : result.files) {
+        if (std::remove(path.c_str()) == 0) {
+            Logger::instance().debug("Удалён временный файл: " + path);
+        } else {
+            Logger::instance().warning("Не удалось удалить временный файл: " + path);
+        }
+    }
+
+    return true;
 }

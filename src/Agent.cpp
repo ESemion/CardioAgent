@@ -1,5 +1,6 @@
 #include "Agent.h"
 #include "Logger.h"
+#include <cstdio>
 
 Agent::Agent(const Config& config)
     : m_config(config), m_server(config.getServerUrl()),
