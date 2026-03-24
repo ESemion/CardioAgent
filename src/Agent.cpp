@@ -3,7 +3,7 @@
 
 
 // В конструкторе реализована логика выделения из URL host и port для SSLClient
-Agent::Agent(const Config& config) : m_config(config), m_running(false) {
+Agent::Agent(const Config& config) : m_config(config), m_running(false), m_currentPollInterval(config.getPollInterval()) {
     std::string url = m_config.getServerUrl();
     
     size_t protocolEnd = url.find("://");
@@ -105,17 +105,25 @@ void Agent::start(std::function<ExecutionResult(const Task&)> callback) {
     m_taskRunning = true;
     
     // Поток для опроса сервера (основной)
+    m_currentPollInterval = m_config.getPollInterval();
     m_pollThread = std::thread([this, callback]() {
         Logger::instance().info("Запущен цикл опроса, интервал: " + std::to_string(m_config.getPollInterval()) + " сек");
-        
+
         while (m_running) {
             std::string body = "{\"UID\":\"" + m_config.getUid() +
                               "\",\"descr\":\"" + m_config.getDescription() +
                               "\",\"access_code\":\"" + m_config.getAccessCode() + "\"}";
-            
+
             auto res = m_httpClient->Post("/app/webagent1/api/wa_task/", body, "application/json");
-            
+
             if (res && res->status == 200) {
+                // Сервер доступен — сбрасываем интервал к базовому
+                if (m_currentPollInterval != m_config.getPollInterval()) {
+                    Logger::instance().info("Сервер снова доступен, интервал опроса сброшен до " +
+                                            std::to_string(m_config.getPollInterval()) + " сек");
+                    m_currentPollInterval = m_config.getPollInterval();
+                }
+
                 std::string code = extractJsonValue(res->body, "code_responce");
                 std::string msg = extractJsonValue(res->body, "msg");
 
@@ -124,9 +132,9 @@ void Agent::start(std::function<ExecutionResult(const Task&)> callback) {
                     task.sessionId = extractJsonValue(res->body, "session_id");
                     task.taskCode = extractJsonValue(res->body, "task_code");
                     task.options = extractJsonValue(res->body, "options");
-                    
+
                     Logger::instance().info("Получено задание: " + task.taskCode);
-                    
+
                     // Вместо прямого выполнения - добавляем задание в очередь
                     {
                         std::lock_guard<std::mutex> lock(m_queueMutex);
@@ -137,13 +145,24 @@ void Agent::start(std::function<ExecutionResult(const Task&)> callback) {
                 else if (code != "0") {
                     Logger::instance().error("Возникла ошибка: " + msg);
                 }
+            } else {
+                // Сервер недоступен — увеличиваем интервал (exponential backoff)
+                int newInterval = std::min(m_currentPollInterval.load() * 2, m_config.getMaxPollInterval());
+                if (newInterval != m_currentPollInterval) {
+                    m_currentPollInterval = newInterval;
+                    Logger::instance().warning("Сервер недоступен, интервал опроса увеличен до " +
+                                               std::to_string(newInterval) + " сек");
+                } else {
+                    Logger::instance().warning("Сервер недоступен, ожидание " +
+                                               std::to_string(newInterval) + " сек");
+                }
             }
-            
-            for (int i = 0; i < m_config.getPollInterval() && m_running; i++) {
+
+            for (int i = 0; i < m_currentPollInterval && m_running; i++) {
                 std::this_thread::sleep_for(std::chrono::seconds(1));
             }
         }
-        
+
         Logger::instance().info("Цикл опроса остановлен");
     });
     

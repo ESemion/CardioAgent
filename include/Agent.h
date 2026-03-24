@@ -72,6 +72,7 @@ private:
     std::mutex m_queueMutex;                   ///< мьютекс для защиты очереди
     std::condition_variable m_queueCV;         ///< условная переменная для ожидания задач
     std::atomic<bool> m_taskRunning;           ///< флаг работы потока выполнения задач
+    std::atomic<int> m_currentPollInterval;    ///< текущий интервал опроса (с учётом backoff)
     
     /**
      * @brief Извлечение значения по ключу из JSON строки
