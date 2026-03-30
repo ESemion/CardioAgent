@@ -32,7 +32,7 @@ public:
     std::string getDescription() const;  ///< получить описание
     std::string getServerUrl() const;    ///< получить URL сервера
     int getPollInterval() const;         ///< получить интервал опроса
-    std::string getAccessCode() const;   ///< получить код доступа
+    std::string getAccessCode();   ///< получить код доступа
 
     void setAccessCode(const std::string& code);  ///< установить код доступа
     

@@ -12,6 +12,7 @@ struct Task {
     std::string sessionId;   ///< ID сессии от сервера
     std::string taskCode;    ///< CONF, UPLOAD, REBOOT
     std::string options;     ///< параметры
+    std::string status;     ///< статус
 };
 
 

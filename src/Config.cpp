@@ -13,6 +13,8 @@ bool Config::save(const std::string& filepath) {
     file << "server_url=" << m_serverUrl << std::endl;
     file << "poll_interval=" << std::to_string(m_pollInterval) << std::endl;
     file << "access_code=" << m_accessCode << std::endl;
+
+    
     return true;
 }
 
@@ -83,6 +85,6 @@ std::string Config::getUid() const { return m_uid; }
 std::string Config::getDescription() const { return m_description; }
 std::string Config::getServerUrl() const { return m_serverUrl; }
 int Config::getPollInterval() const { return m_pollInterval; }
-std::string Config::getAccessCode() const { return m_accessCode; }
+std::string Config::getAccessCode() { return m_accessCode; }
 
 void Config::setAccessCode(const std::string& code) { m_accessCode = code; }
