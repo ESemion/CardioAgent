@@ -5,13 +5,19 @@
 
 /**
  * @class TaskExecutor
- * @brief Исполнитель заданий, полученных от сервера
+ * @brief Исполнитель заданий
+ * 
+ * Выполняет полученные от сервера задания.
  */
 class TaskExecutor {
 public:
     TaskExecutor();
-
-    /// @brief Выполнить задание и вернуть результат с путями к созданным файлам
+    
+    /**
+     * @brief Выполнить задание
+     * @param task задание от сервера
+     * @return результат выполнения
+     */
     ExecutionResult execute(const Task& task);
 };
 

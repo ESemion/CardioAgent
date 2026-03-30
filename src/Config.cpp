@@ -3,7 +3,7 @@
 #include <fstream>
 #include <ctime>
 
-Config::Config() : m_pollInterval(10), m_maxPollInterval(300) {}
+Config::Config() : m_pollInterval(10) {}
 
 bool Config::save(const std::string& filepath) {
     std::ofstream file(filepath);
@@ -12,7 +12,6 @@ bool Config::save(const std::string& filepath) {
     file << "descr=" << m_description << std::endl;
     file << "server_url=" << m_serverUrl << std::endl;
     file << "poll_interval=" << std::to_string(m_pollInterval) << std::endl;
-    file << "max_poll_interval=" << std::to_string(m_maxPollInterval) << std::endl;
     file << "access_code=" << m_accessCode << std::endl;
     return true;
 }
@@ -54,14 +53,6 @@ bool Config::load(const std::string& filepath) {
                 needResaving = true;
             }
         }
-        else if (key == "max_poll_interval") {
-            try {
-                m_maxPollInterval = std::stoi(value);
-            } catch (...) {
-                m_maxPollInterval = 300;
-                needResaving = true;
-            }
-        }
     }
 
     if (m_uid.empty()) {
@@ -92,7 +83,6 @@ std::string Config::getUid() const { return m_uid; }
 std::string Config::getDescription() const { return m_description; }
 std::string Config::getServerUrl() const { return m_serverUrl; }
 int Config::getPollInterval() const { return m_pollInterval; }
-int Config::getMaxPollInterval() const { return m_maxPollInterval; }
 std::string Config::getAccessCode() const { return m_accessCode; }
 
 void Config::setAccessCode(const std::string& code) { m_accessCode = code; }

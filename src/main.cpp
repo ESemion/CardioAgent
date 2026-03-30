@@ -40,11 +40,6 @@ int main(int argc, char* argv[]) {
     Agent agent(config);
     g_agent = &agent;
     
-    if (!agent.checkServerAvailability()) {
-        Logger::instance().error("Сервер недоступен при запуске");
-        return 1;
-    }
-
     if (!agent.registerAgent()) {
         Logger::instance().error("Не удалось зарегистрироваться на сервере");
         return 1;
