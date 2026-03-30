@@ -16,6 +16,7 @@ add_executable(cardioagent
     src/Agent.cpp
     src/TaskExecutor.cpp
     src/Logger.cpp
+    src/ServerClient.cpp
     
 )
 
