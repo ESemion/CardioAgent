@@ -3,6 +3,9 @@
 #include <thread>
 #include <atomic>
 #include <sys/stat.h>
+#ifdef _WIN32
+#include <direct.h>
+#endif
 
 #include "Config.h"
 #include "Agent.h"

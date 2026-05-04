@@ -5,6 +5,13 @@
 #include <fstream>
 #include <mutex>
 
+#ifdef ERROR
+#undef ERROR
+#endif
+#ifdef DEBUG
+#undef DEBUG
+#endif
+
 /// @brief Уровни логирования (фильтруются через Logger::setLevel)
 enum class LogLevel { DEBUG, INFO, WARNING, ERROR };
 
