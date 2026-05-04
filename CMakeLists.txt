@@ -2,7 +2,9 @@ cmake_minimum_required(VERSION 3.10)
 project(CardioAgent)
 
 # Подавляем предупреждения от устаревших методов в CMakeLists
-add_compile_options(-Wno-deprecated-declarations)
+if(NOT MSVC)
+    add_compile_options(-Wno-deprecated-declarations)
+endif()
 
 set(CMAKE_CXX_STANDARD 17)
 
