@@ -4,6 +4,9 @@ project(CardioAgent)
 # Подавляем предупреждения от устаревших методов в CMakeLists
 if(NOT MSVC)
     add_compile_options(-Wno-deprecated-declarations)
+else()
+    # Prevent windows.h from defining min/max macros (conflicts with std::min/max)
+    add_compile_definitions(NOMINMAX WIN32_LEAN_AND_MEAN)
 endif()
 
 set(CMAKE_CXX_STANDARD 17)
