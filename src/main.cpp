@@ -1,3 +1,8 @@
+#ifdef _WIN32
+#include <direct.h>
+#define mkdir(dir) _mkdir(dir)
+#endif
+
 #include <iostream>
 #include <csignal>
 #include <thread>

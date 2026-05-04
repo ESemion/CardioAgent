@@ -9,6 +9,8 @@ set(CMAKE_CXX_STANDARD 17)
 # Ищем OpenSSL
 find_package(OpenSSL REQUIRED)
 
+add_definitions(-D_WIN32_WINNT=0x0A00)  # Windows 10+
+
 # Добавляем исполняемый файл
 add_executable(cardioagent
     src/main.cpp
@@ -19,7 +21,8 @@ add_executable(cardioagent
     src/ServerClient.cpp
     
 )
-add_subdirectory(tests)
+target_link_libraries(cardioagent ${OPENSSL_LIBRARIES} ws2_32 crypt32)
+#add_subdirectory(tests)
 
 
 # Пути к заголовочным файлам

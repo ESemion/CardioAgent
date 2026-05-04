@@ -1,5 +1,6 @@
 # Сборка и временные файлы
 build/
+CardioAgent/
 cmake-build-*/
 *.exe
 *.dll
