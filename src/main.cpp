@@ -7,7 +7,16 @@
 #include <csignal>
 #include <thread>
 #include <atomic>
+#include <filesystem>
 #include <sys/stat.h>
+#ifdef _WIN32
+#include <direct.h>
+#include <windows.h>
+#elif defined(__APPLE__)
+#include <mach-o/dyld.h>
+#else
+#include <unistd.h>
+#endif
 
 #include "Config.h"
 #include "Agent.h"
@@ -26,6 +35,22 @@ void signalHandler(int signal) {
     }
 }
 
+static std::string getExeDir() {
+#ifdef _WIN32
+    char path[MAX_PATH];
+    GetModuleFileNameA(nullptr, path, MAX_PATH);
+#elif defined(__APPLE__)
+    char path[1024];
+    uint32_t size = sizeof(path);
+    _NSGetExecutablePath(path, &size);
+#else
+    char path[1024];
+    ssize_t len = readlink("/proc/self/exe", path, sizeof(path) - 1);
+    path[len > 0 ? len : 0] = '\0';
+#endif
+    return std::filesystem::path(path).parent_path().string();
+}
+
 int main(int argc, char* argv[]) {
     // Создаем необходимые директории
 #ifdef _WIN32
@@ -41,10 +66,15 @@ int main(int argc, char* argv[]) {
     Logger::instance().setLogFile("logs/agent.log");
     Logger::instance().info("CardioAgent v1.0 запущен");
 
-    // Определение пути к конфигу
-    std::string configPath = "config/agent.ini";
+    // Определение пути к конфигу:
+    // 1. agent.ini рядом с исполняемым файлом (релиз)
+    // 2. config/agent.ini (дев-сборка)
+    std::string configPath;
     if (argc > 1) {
         configPath = argv[1];
+    } else {
+        std::string exePath = getExeDir() + "/agent.ini";
+        configPath = std::filesystem::exists(exePath) ? exePath : "config/agent.ini";
     }
 
     Config config;

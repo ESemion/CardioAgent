@@ -1,0 +1,120 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            artifact: linux-x64
+            ext: tar.gz
+          - os: macos-latest
+            artifact: macos-x64
+            ext: dmg
+          - os: windows-latest
+            artifact: windows-x64
+            ext: zip
+
+    runs-on: ${{ matrix.os }}
+    name: Build (${{ matrix.artifact }})
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake build-essential libssl-dev
+
+      - name: Install dependencies (macOS)
+        if: runner.os == 'macOS'
+        run: brew install openssl
+
+      - name: Configure (Linux)
+        if: runner.os == 'Linux'
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Release
+
+      - name: Configure (macOS)
+        if: runner.os == 'macOS'
+        shell: bash
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Release -DOPENSSL_ROOT_DIR=$(brew --prefix openssl)
+
+      - name: Install OpenSSL (Windows)
+        if: runner.os == 'Windows'
+        run: vcpkg install openssl:x64-windows
+
+      - name: Configure (Windows)
+        if: runner.os == 'Windows'
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Release "-DCMAKE_TOOLCHAIN_FILE=$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake"
+
+      - name: Build
+        run: cmake --build build --config Release -j4
+
+      # ── Linux: .tar.gz ────────────────────────────────────────────────────
+      - name: Package (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          VERSION=${{ github.ref_name }}
+          mkdir -p dist
+          cp build/cardioagent dist/
+          cp config/agent.ini.example dist/agent.ini.example
+          tar -czf "cardioagent-${VERSION}-linux-x64.tar.gz" -C dist .
+
+      # ── macOS: .dmg ───────────────────────────────────────────────────────
+      - name: Package (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          VERSION=${{ github.ref_name }}
+          mkdir -p dmg_stage
+          cp build/cardioagent dmg_stage/
+          cp config/agent.ini.example dmg_stage/agent.ini.example
+          hdiutil create \
+            -volname "CardioAgent ${VERSION}" \
+            -srcfolder dmg_stage \
+            -ov -format UDZO \
+            "cardioagent-${VERSION}-macos-x64.dmg"
+
+      # ── Windows: .zip ─────────────────────────────────────────────────────
+      - name: Package (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $version = "${{ github.ref_name }}"
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          Copy-Item build/Release/cardioagent.exe dist/
+          Copy-Item config/agent.ini.example dist/agent.ini.example
+          Compress-Archive -Path dist/* -DestinationPath "cardioagent-$version-windows-x64.zip"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: cardioagent-*.${{ matrix.ext }}
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          merge-multiple: true
+          path: artifacts
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/*
+          generate_release_notes: true
+          prerelease: ${{ contains(github.ref_name, '-') }}
